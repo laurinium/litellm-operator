@@ -34,6 +34,7 @@ import (
 	authv1alpha1 "github.com/bbdsoftware/litellm-operator/api/auth/v1alpha1"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/base"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/common"
+	"github.com/bbdsoftware/litellm-operator/internal/interfaces"
 	"github.com/bbdsoftware/litellm-operator/internal/litellm"
 	"github.com/bbdsoftware/litellm-operator/internal/util"
 )
@@ -42,7 +43,7 @@ import (
 type TeamMemberAssociationReconciler struct {
 	*base.BaseController[*authv1alpha1.TeamMemberAssociation]
 	LitellmClient       litellm.LitellmTeamMemberAssociation
-	cachedConnectionRef *authv1alpha1.ConnectionRef
+	cachedConnectionRef interfaces.ConnectionRefInterface
 }
 
 // NewTeamMemberAssociationReconciler creates a new TeamMemberAssociationReconciler instance
@@ -176,7 +177,7 @@ func IsConditionTrue(conditions []metav1.Condition, conditionType string) bool {
 // ensureConnectionSetup configures the LiteLLM client
 func (r *TeamMemberAssociationReconciler) ensureConnectionSetup(ctx context.Context, teamMemberAssociation *authv1alpha1.TeamMemberAssociation) error {
 	// Check if we need to create or recreate the client due to a different ConnectionRef
-	needsNewClient := r.LitellmClient == nil || !r.isSameConnectionRef(&teamMemberAssociation.Spec.ConnectionRef)
+	needsNewClient := r.LitellmClient == nil || !common.IsSameConnectionRef(r.cachedConnectionRef, teamMemberAssociation.Spec.ConnectionRef)
 
 	if needsNewClient {
 		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, teamMemberAssociation.Spec.ConnectionRef, teamMemberAssociation.Namespace)
@@ -185,44 +186,10 @@ func (r *TeamMemberAssociationReconciler) ensureConnectionSetup(ctx context.Cont
 		}
 		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
 		// Cache the current ConnectionRef for comparison in future reconciliations
-		r.cachedConnectionRef = &teamMemberAssociation.Spec.ConnectionRef
+		r.cachedConnectionRef = teamMemberAssociation.Spec.ConnectionRef
 	}
 
 	return nil
-}
-
-// isSameConnectionRef compares the cached ConnectionRef with the current one
-func (r *TeamMemberAssociationReconciler) isSameConnectionRef(current *authv1alpha1.ConnectionRef) bool {
-	if r.cachedConnectionRef == nil {
-		return false
-	}
-
-	cached := r.cachedConnectionRef
-
-	// Compare SecretRef
-	if (cached.SecretRef == nil) != (current.SecretRef == nil) {
-		return false
-	}
-	if cached.SecretRef != nil && current.SecretRef != nil {
-		if cached.SecretRef.Name != current.SecretRef.Name ||
-			cached.SecretRef.Keys.MasterKey != current.SecretRef.Keys.MasterKey ||
-			cached.SecretRef.Keys.URL != current.SecretRef.Keys.URL {
-			return false
-		}
-	}
-
-	// Compare InstanceRef
-	if (cached.InstanceRef == nil) != (current.InstanceRef == nil) {
-		return false
-	}
-	if cached.InstanceRef != nil && current.InstanceRef != nil {
-		if cached.InstanceRef.Name != current.InstanceRef.Name ||
-			cached.InstanceRef.Namespace != current.InstanceRef.Namespace {
-			return false
-		}
-	}
-
-	return true
 }
 
 // reconcileDelete handles the deletion branch with idempotent external cleanup

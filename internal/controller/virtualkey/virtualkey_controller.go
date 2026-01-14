@@ -35,6 +35,7 @@ import (
 	authv1alpha1 "github.com/bbdsoftware/litellm-operator/api/auth/v1alpha1"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/base"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/common"
+	"github.com/bbdsoftware/litellm-operator/internal/interfaces"
 	"github.com/bbdsoftware/litellm-operator/internal/litellm"
 	"github.com/bbdsoftware/litellm-operator/internal/util"
 )
@@ -45,7 +46,7 @@ type VirtualKeyReconciler struct {
 	LitellmClient         litellm.LitellmVirtualKey
 	litellmResourceNaming *util.LitellmResourceNaming
 	OverrideLiteLLMURL    string
-	cachedConnectionRef   *authv1alpha1.ConnectionRef
+	cachedConnectionRef   interfaces.ConnectionRefInterface
 }
 
 // NewVirtualKeyReconciler creates a new VirtualKeyReconciler instance
@@ -153,7 +154,7 @@ func (r *VirtualKeyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // ensureConnectionSetup configures the LiteLLM client and resource naming
 func (r *VirtualKeyReconciler) ensureConnectionSetup(ctx context.Context, virtualKey *authv1alpha1.VirtualKey) error {
 	// Check if we need to create or recreate the client due to a different ConnectionRef
-	needsNewClient := r.LitellmClient == nil || !r.isSameConnectionRef(&virtualKey.Spec.ConnectionRef)
+	needsNewClient := r.LitellmClient == nil || !common.IsSameConnectionRef(r.cachedConnectionRef, virtualKey.Spec.ConnectionRef)
 
 	if needsNewClient {
 		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, virtualKey.Spec.ConnectionRef, virtualKey.Namespace)
@@ -162,7 +163,7 @@ func (r *VirtualKeyReconciler) ensureConnectionSetup(ctx context.Context, virtua
 		}
 		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
 		// Cache the current ConnectionRef for comparison in future reconciliations
-		r.cachedConnectionRef = &virtualKey.Spec.ConnectionRef
+		r.cachedConnectionRef = virtualKey.Spec.ConnectionRef
 	}
 
 	if r.litellmResourceNaming == nil || needsNewClient {
@@ -170,40 +171,6 @@ func (r *VirtualKeyReconciler) ensureConnectionSetup(ctx context.Context, virtua
 	}
 
 	return nil
-}
-
-// isSameConnectionRef compares the cached ConnectionRef with the current one
-func (r *VirtualKeyReconciler) isSameConnectionRef(current *authv1alpha1.ConnectionRef) bool {
-	if r.cachedConnectionRef == nil {
-		return false
-	}
-
-	cached := r.cachedConnectionRef
-
-	// Compare SecretRef
-	if (cached.SecretRef == nil) != (current.SecretRef == nil) {
-		return false
-	}
-	if cached.SecretRef != nil && current.SecretRef != nil {
-		if cached.SecretRef.Name != current.SecretRef.Name ||
-			cached.SecretRef.Keys.MasterKey != current.SecretRef.Keys.MasterKey ||
-			cached.SecretRef.Keys.URL != current.SecretRef.Keys.URL {
-			return false
-		}
-	}
-
-	// Compare InstanceRef
-	if (cached.InstanceRef == nil) != (current.InstanceRef == nil) {
-		return false
-	}
-	if cached.InstanceRef != nil && current.InstanceRef != nil {
-		if cached.InstanceRef.Name != current.InstanceRef.Name ||
-			cached.InstanceRef.Namespace != current.InstanceRef.Namespace {
-			return false
-		}
-	}
-
-	return true
 }
 
 // reconcileDelete handles the deletion branch with idempotent external cleanup

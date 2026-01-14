@@ -27,6 +27,7 @@ import (
 	litellmv1alpha1 "github.com/bbdsoftware/litellm-operator/api/litellm/v1alpha1"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/base"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/common"
+	"github.com/bbdsoftware/litellm-operator/internal/interfaces"
 	"github.com/bbdsoftware/litellm-operator/internal/litellm"
 	modelProvider "github.com/bbdsoftware/litellm-operator/internal/model"
 	"github.com/bbdsoftware/litellm-operator/internal/util"
@@ -42,7 +43,7 @@ import (
 type ModelReconciler struct {
 	*base.BaseController[*litellmv1alpha1.Model]
 	LitellmModelClient  litellm.LitellmModel
-	cachedConnectionRef *litellmv1alpha1.ConnectionRef
+	cachedConnectionRef interfaces.ConnectionRefInterface
 }
 
 type ExternalData struct {
@@ -142,7 +143,7 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 // ensureConnectionSetup configures the LiteLLM client
 func (r *ModelReconciler) ensureConnectionSetup(ctx context.Context, model *litellmv1alpha1.Model) error {
 	// Check if we need to create or recreate the client due to a different ConnectionRef
-	needsNewClient := r.LitellmModelClient == nil || !r.isSameConnectionRef(&model.Spec.ConnectionRef)
+	needsNewClient := r.LitellmModelClient == nil || !common.IsSameConnectionRef(r.cachedConnectionRef, model.Spec.ConnectionRef)
 
 	if needsNewClient {
 		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, model.Spec.ConnectionRef, model.Namespace)
@@ -151,33 +152,10 @@ func (r *ModelReconciler) ensureConnectionSetup(ctx context.Context, model *lite
 		}
 		r.LitellmModelClient = litellmConnectionHandler.GetLitellmClient()
 		// Cache the current ConnectionRef for comparison in future reconciliations
-		r.cachedConnectionRef = &model.Spec.ConnectionRef
+		r.cachedConnectionRef = model.Spec.ConnectionRef
 	}
 
 	return nil
-}
-
-// isSameConnectionRef compares the cached ConnectionRef with the current one
-func (r *ModelReconciler) isSameConnectionRef(current *litellmv1alpha1.ConnectionRef) bool {
-	if r.cachedConnectionRef == nil {
-		return false
-	}
-
-	cached := r.cachedConnectionRef
-
-	// Compare SecretRef (different structure than auth.ConnectionRef)
-	if cached.SecretRef.Namespace != current.SecretRef.Namespace ||
-		cached.SecretRef.SecretName != current.SecretRef.SecretName {
-		return false
-	}
-
-	// Compare InstanceRef
-	if cached.InstanceRef.Namespace != current.InstanceRef.Namespace ||
-		cached.InstanceRef.Name != current.InstanceRef.Name {
-		return false
-	}
-
-	return true
 }
 
 // reconcileDelete handles the deletion branch with idempotent external cleanup

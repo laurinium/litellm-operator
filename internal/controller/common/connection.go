@@ -224,3 +224,60 @@ func (h *LitellmConnectionHandler) getConnectionDetailsFromInstanceRef(ctx conte
 		URL:       strings.TrimSpace(url),
 	}, nil
 }
+
+// IsSameConnectionRef compares two ConnectionRefInterface objects to determine if they represent the same connection
+func IsSameConnectionRef(cached, current interfaces.ConnectionRefInterface) bool {
+	if cached == nil || current == nil {
+		return cached == current
+	}
+
+	// Compare SecretRef
+	if cached.HasSecretRef() != current.HasSecretRef() {
+		return false
+	}
+	if cached.HasSecretRef() && current.HasSecretRef() {
+		cachedSecretRef := cached.GetSecretRef()
+		currentSecretRef := current.GetSecretRef()
+
+		cachedSR, cachedOK := cachedSecretRef.(interfaces.SecretRefInterface)
+		currentSR, currentOK := currentSecretRef.(interfaces.SecretRefInterface)
+
+		if cachedOK && currentOK {
+			if cachedSR.GetSecretName() != currentSR.GetSecretName() ||
+				cachedSR.GetNamespace() != currentSR.GetNamespace() {
+				return false
+			}
+
+			// Compare keys if both have keys
+			if cachedSR.HasKeys() && currentSR.HasKeys() {
+				cachedKeys := cachedSR.GetKeys()
+				currentKeys := currentSR.GetKeys()
+				if cachedKeys.GetMasterKey() != currentKeys.GetMasterKey() ||
+					cachedKeys.GetURL() != currentKeys.GetURL() {
+					return false
+				}
+			}
+		}
+	}
+
+	// Compare InstanceRef
+	if cached.HasInstanceRef() != current.HasInstanceRef() {
+		return false
+	}
+	if cached.HasInstanceRef() && current.HasInstanceRef() {
+		cachedInstanceRef := cached.GetInstanceRef()
+		currentInstanceRef := current.GetInstanceRef()
+
+		cachedIR, cachedOK := cachedInstanceRef.(interfaces.InstanceRefInterface)
+		currentIR, currentOK := currentInstanceRef.(interfaces.InstanceRefInterface)
+
+		if cachedOK && currentOK {
+			if cachedIR.GetInstanceName() != currentIR.GetInstanceName() ||
+				cachedIR.GetNamespace() != currentIR.GetNamespace() {
+				return false
+			}
+		}
+	}
+
+	return true
+}
