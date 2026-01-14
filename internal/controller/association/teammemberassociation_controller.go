@@ -176,16 +176,19 @@ func IsConditionTrue(conditions []metav1.Condition, conditionType string) bool {
 
 // ensureConnectionSetup configures the LiteLLM client
 func (r *TeamMemberAssociationReconciler) ensureConnectionSetup(ctx context.Context, teamMemberAssociation *authv1alpha1.TeamMemberAssociation) error {
-	// Check if we need to create or recreate the client due to a different ConnectionRef
-	needsNewClient := r.LitellmClient == nil || !common.IsSameConnectionRef(r.cachedConnectionRef, teamMemberAssociation.Spec.ConnectionRef)
+	client, needsNewClient, err := common.EnsureLitellmClient(
+		r.Client,
+		ctx,
+		r.cachedConnectionRef,
+		teamMemberAssociation.Spec.ConnectionRef,
+		teamMemberAssociation.Namespace,
+	)
+	if err != nil {
+		return err
+	}
 
 	if needsNewClient {
-		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, teamMemberAssociation.Spec.ConnectionRef, teamMemberAssociation.Namespace)
-		if err != nil {
-			return err
-		}
-		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
-		// Cache the current ConnectionRef for comparison in future reconciliations
+		r.LitellmClient = client
 		r.cachedConnectionRef = teamMemberAssociation.Spec.ConnectionRef
 	}
 

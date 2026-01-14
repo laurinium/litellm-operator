@@ -142,16 +142,19 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 // ensureConnectionSetup configures the LiteLLM client
 func (r *ModelReconciler) ensureConnectionSetup(ctx context.Context, model *litellmv1alpha1.Model) error {
-	// Check if we need to create or recreate the client due to a different ConnectionRef
-	needsNewClient := r.LitellmModelClient == nil || !common.IsSameConnectionRef(r.cachedConnectionRef, model.Spec.ConnectionRef)
+	client, needsNewClient, err := common.EnsureLitellmClient(
+		r.Client,
+		ctx,
+		r.cachedConnectionRef,
+		model.Spec.ConnectionRef,
+		model.Namespace,
+	)
+	if err != nil {
+		return err
+	}
 
 	if needsNewClient {
-		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, model.Spec.ConnectionRef, model.Namespace)
-		if err != nil {
-			return err
-		}
-		r.LitellmModelClient = litellmConnectionHandler.GetLitellmClient()
-		// Cache the current ConnectionRef for comparison in future reconciliations
+		r.LitellmModelClient = client
 		r.cachedConnectionRef = model.Spec.ConnectionRef
 	}
 

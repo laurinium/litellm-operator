@@ -153,16 +153,19 @@ func (r *VirtualKeyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // ensureConnectionSetup configures the LiteLLM client and resource naming
 func (r *VirtualKeyReconciler) ensureConnectionSetup(ctx context.Context, virtualKey *authv1alpha1.VirtualKey) error {
-	// Check if we need to create or recreate the client due to a different ConnectionRef
-	needsNewClient := r.LitellmClient == nil || !common.IsSameConnectionRef(r.cachedConnectionRef, virtualKey.Spec.ConnectionRef)
+	client, needsNewClient, err := common.EnsureLitellmClient(
+		r.Client,
+		ctx,
+		r.cachedConnectionRef,
+		virtualKey.Spec.ConnectionRef,
+		virtualKey.Namespace,
+	)
+	if err != nil {
+		return err
+	}
 
 	if needsNewClient {
-		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, virtualKey.Spec.ConnectionRef, virtualKey.Namespace)
-		if err != nil {
-			return err
-		}
-		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
-		// Cache the current ConnectionRef for comparison in future reconciliations
+		r.LitellmClient = client
 		r.cachedConnectionRef = virtualKey.Spec.ConnectionRef
 	}
 

@@ -281,3 +281,26 @@ func IsSameConnectionRef(cached, current interfaces.ConnectionRefInterface) bool
 
 	return true
 }
+
+// EnsureLitellmClient creates or reuses a LiteLLM client based on whether the ConnectionRef has changed
+// Returns the client and a boolean indicating whether a new client was created
+func EnsureLitellmClient(
+	k8sClient client.Client,
+	ctx context.Context,
+	cachedConnectionRef interfaces.ConnectionRefInterface,
+	currentConnectionRef interfaces.ConnectionRefInterface,
+	namespace string,
+) (*litellm.LitellmClient, bool, error) {
+	// Check if we need to create or recreate the client due to a different ConnectionRef
+	needsNewClient := !IsSameConnectionRef(cachedConnectionRef, currentConnectionRef)
+
+	if needsNewClient {
+		litellmConnectionHandler, err := NewLitellmConnectionHandler(k8sClient, ctx, currentConnectionRef, namespace)
+		if err != nil {
+			return nil, false, err
+		}
+		return litellmConnectionHandler.GetLitellmClient(), true, nil
+	}
+
+	return nil, false, nil
+}
