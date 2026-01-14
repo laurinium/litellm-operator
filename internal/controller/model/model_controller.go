@@ -41,7 +41,8 @@ import (
 // ModelReconciler reconciles a Model object
 type ModelReconciler struct {
 	*base.BaseController[*litellmv1alpha1.Model]
-	LitellmModelClient litellm.LitellmModel
+	LitellmModelClient  litellm.LitellmModel
+	cachedConnectionRef *litellmv1alpha1.ConnectionRef
 }
 
 type ExternalData struct {
@@ -58,7 +59,8 @@ func NewModelReconciler(client client.Client, scheme *runtime.Scheme) *ModelReco
 			DefaultTimeout: 20 * time.Second,
 			ControllerName: "model",
 		},
-		LitellmModelClient: nil,
+		LitellmModelClient:  nil,
+		cachedConnectionRef: nil,
 	}
 }
 
@@ -139,15 +141,43 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 // ensureConnectionSetup configures the LiteLLM client
 func (r *ModelReconciler) ensureConnectionSetup(ctx context.Context, model *litellmv1alpha1.Model) error {
-	if r.LitellmModelClient == nil {
+	// Check if we need to create or recreate the client due to a different ConnectionRef
+	needsNewClient := r.LitellmModelClient == nil || !r.isSameConnectionRef(&model.Spec.ConnectionRef)
+
+	if needsNewClient {
 		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, model.Spec.ConnectionRef, model.Namespace)
 		if err != nil {
 			return err
 		}
 		r.LitellmModelClient = litellmConnectionHandler.GetLitellmClient()
+		// Cache the current ConnectionRef for comparison in future reconciliations
+		r.cachedConnectionRef = &model.Spec.ConnectionRef
 	}
 
 	return nil
+}
+
+// isSameConnectionRef compares the cached ConnectionRef with the current one
+func (r *ModelReconciler) isSameConnectionRef(current *litellmv1alpha1.ConnectionRef) bool {
+	if r.cachedConnectionRef == nil {
+		return false
+	}
+
+	cached := r.cachedConnectionRef
+
+	// Compare SecretRef (different structure than auth.ConnectionRef)
+	if cached.SecretRef.Namespace != current.SecretRef.Namespace ||
+		cached.SecretRef.SecretName != current.SecretRef.SecretName {
+		return false
+	}
+
+	// Compare InstanceRef
+	if cached.InstanceRef.Namespace != current.InstanceRef.Namespace ||
+		cached.InstanceRef.Name != current.InstanceRef.Name {
+		return false
+	}
+
+	return true
 }
 
 // reconcileDelete handles the deletion branch with idempotent external cleanup

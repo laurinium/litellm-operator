@@ -43,6 +43,7 @@ type UserReconciler struct {
 	*base.BaseController[*authv1alpha1.User]
 	LitellmClient         litellm.LitellmUser
 	litellmResourceNaming *util.LitellmResourceNaming
+	cachedConnectionRef   *authv1alpha1.ConnectionRef
 }
 
 // NewUserReconciler creates a new UserReconciler instance
@@ -56,6 +57,7 @@ func NewUserReconciler(client client.Client, scheme *runtime.Scheme) *UserReconc
 		},
 		LitellmClient:         nil,
 		litellmResourceNaming: nil,
+		cachedConnectionRef:   nil,
 	}
 }
 
@@ -139,19 +141,58 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 // ensureConnectionSetup configures the LiteLLM client and resource naming
 func (r *UserReconciler) ensureConnectionSetup(ctx context.Context, user *authv1alpha1.User) error {
-	if r.LitellmClient == nil {
+	// Check if we need to create or recreate the client due to a different ConnectionRef
+	needsNewClient := r.LitellmClient == nil || !r.isSameConnectionRef(&user.Spec.ConnectionRef)
+
+	if needsNewClient {
 		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, user.Spec.ConnectionRef, user.Namespace)
 		if err != nil {
 			return err
 		}
 		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
+		// Cache the current ConnectionRef for comparison in future reconciliations
+		r.cachedConnectionRef = &user.Spec.ConnectionRef
 	}
 
-	if r.litellmResourceNaming == nil {
+	if r.litellmResourceNaming == nil || needsNewClient {
 		r.litellmResourceNaming = util.NewLitellmResourceNaming(&user.Spec.ConnectionRef)
 	}
 
 	return nil
+}
+
+// isSameConnectionRef compares the cached ConnectionRef with the current one
+func (r *UserReconciler) isSameConnectionRef(current *authv1alpha1.ConnectionRef) bool {
+	if r.cachedConnectionRef == nil {
+		return false
+	}
+
+	cached := r.cachedConnectionRef
+
+	// Compare SecretRef
+	if (cached.SecretRef == nil) != (current.SecretRef == nil) {
+		return false
+	}
+	if cached.SecretRef != nil && current.SecretRef != nil {
+		if cached.SecretRef.Name != current.SecretRef.Name ||
+			cached.SecretRef.Keys.MasterKey != current.SecretRef.Keys.MasterKey ||
+			cached.SecretRef.Keys.URL != current.SecretRef.Keys.URL {
+			return false
+		}
+	}
+
+	// Compare InstanceRef
+	if (cached.InstanceRef == nil) != (current.InstanceRef == nil) {
+		return false
+	}
+	if cached.InstanceRef != nil && current.InstanceRef != nil {
+		if cached.InstanceRef.Name != current.InstanceRef.Name ||
+			cached.InstanceRef.Namespace != current.InstanceRef.Namespace {
+			return false
+		}
+	}
+
+	return true
 }
 
 // reconcileDelete handles the deletion branch with idempotent external cleanup
