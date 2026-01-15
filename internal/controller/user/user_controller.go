@@ -56,9 +56,6 @@ func NewUserReconciler(client client.Client, scheme *runtime.Scheme) *UserReconc
 			DefaultTimeout: 20 * time.Second,
 			ControllerName: "user",
 		},
-		LitellmClient:         nil,
-		litellmResourceNaming: nil,
-		cachedConnectionRef:   nil,
 	}
 }
 

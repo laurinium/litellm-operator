@@ -58,10 +58,6 @@ func NewVirtualKeyReconciler(client client.Client, scheme *runtime.Scheme) *Virt
 			DefaultTimeout: 20 * time.Second,
 			ControllerName: "virtualkey",
 		},
-		LitellmClient:         nil,
-		litellmResourceNaming: nil,
-		OverrideLiteLLMURL:    "",
-		cachedConnectionRef:   nil,
 	}
 }
 

@@ -231,55 +231,74 @@ func IsSameConnectionRef(cached, current interfaces.ConnectionRefInterface) bool
 		return cached == current
 	}
 
-	// Compare SecretRef
-	if cached.HasSecretRef() != current.HasSecretRef() {
+	if !isSameSecretRef(cached, current) {
 		return false
 	}
-	if cached.HasSecretRef() && current.HasSecretRef() {
-		cachedSecretRef := cached.GetSecretRef()
-		currentSecretRef := current.GetSecretRef()
 
-		cachedSR, cachedOK := cachedSecretRef.(interfaces.SecretRefInterface)
-		currentSR, currentOK := currentSecretRef.(interfaces.SecretRefInterface)
-
-		if cachedOK && currentOK {
-			if cachedSR.GetSecretName() != currentSR.GetSecretName() ||
-				cachedSR.GetNamespace() != currentSR.GetNamespace() {
-				return false
-			}
-
-			// Compare keys if both have keys
-			if cachedSR.HasKeys() && currentSR.HasKeys() {
-				cachedKeys := cachedSR.GetKeys()
-				currentKeys := currentSR.GetKeys()
-				if cachedKeys.GetMasterKey() != currentKeys.GetMasterKey() ||
-					cachedKeys.GetURL() != currentKeys.GetURL() {
-					return false
-				}
-			}
-		}
-	}
-
-	// Compare InstanceRef
-	if cached.HasInstanceRef() != current.HasInstanceRef() {
+	if !isSameInstanceRef(cached, current) {
 		return false
-	}
-	if cached.HasInstanceRef() && current.HasInstanceRef() {
-		cachedInstanceRef := cached.GetInstanceRef()
-		currentInstanceRef := current.GetInstanceRef()
-
-		cachedIR, cachedOK := cachedInstanceRef.(interfaces.InstanceRefInterface)
-		currentIR, currentOK := currentInstanceRef.(interfaces.InstanceRefInterface)
-
-		if cachedOK && currentOK {
-			if cachedIR.GetInstanceName() != currentIR.GetInstanceName() ||
-				cachedIR.GetNamespace() != currentIR.GetNamespace() {
-				return false
-			}
-		}
 	}
 
 	return true
+}
+
+// isSameSecretRef compares SecretRef fields of two ConnectionRefInterface objects
+func isSameSecretRef(cached, current interfaces.ConnectionRefInterface) bool {
+	if cached.HasSecretRef() != current.HasSecretRef() {
+		return false
+	}
+
+	if !cached.HasSecretRef() {
+		return true
+	}
+
+	cachedSR, cachedOK := cached.GetSecretRef().(interfaces.SecretRefInterface)
+	currentSR, currentOK := current.GetSecretRef().(interfaces.SecretRefInterface)
+
+	if !cachedOK || !currentOK {
+		return false
+	}
+
+	if cachedSR.GetSecretName() != currentSR.GetSecretName() ||
+		cachedSR.GetNamespace() != currentSR.GetNamespace() {
+		return false
+	}
+
+	return isSameKeys(cachedSR, currentSR)
+}
+
+// isSameKeys compares the keys of two SecretRefInterface objects
+func isSameKeys(cached, current interfaces.SecretRefInterface) bool {
+	if !cached.HasKeys() || !current.HasKeys() {
+		return true
+	}
+
+	cachedKeys := cached.GetKeys()
+	currentKeys := current.GetKeys()
+
+	return cachedKeys.GetMasterKey() == currentKeys.GetMasterKey() &&
+		cachedKeys.GetURL() == currentKeys.GetURL()
+}
+
+// isSameInstanceRef compares InstanceRef fields of two ConnectionRefInterface objects
+func isSameInstanceRef(cached, current interfaces.ConnectionRefInterface) bool {
+	if cached.HasInstanceRef() != current.HasInstanceRef() {
+		return false
+	}
+
+	if !cached.HasInstanceRef() {
+		return true
+	}
+
+	cachedIR, cachedOK := cached.GetInstanceRef().(interfaces.InstanceRefInterface)
+	currentIR, currentOK := current.GetInstanceRef().(interfaces.InstanceRefInterface)
+
+	if !cachedOK || !currentOK {
+		return false
+	}
+
+	return cachedIR.GetInstanceName() == currentIR.GetInstanceName() &&
+		cachedIR.GetNamespace() == currentIR.GetNamespace()
 }
 
 // EnsureLitellmClient creates or reuses a LiteLLM client based on whether the ConnectionRef has changed

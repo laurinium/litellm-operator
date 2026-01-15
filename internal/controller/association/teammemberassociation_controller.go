@@ -54,8 +54,6 @@ func NewTeamMemberAssociationReconciler(client client.Client, scheme *runtime.Sc
 			Scheme:         scheme,
 			DefaultTimeout: 20 * time.Second,
 		},
-		LitellmClient:       nil,
-		cachedConnectionRef: nil,
 	}
 }
 

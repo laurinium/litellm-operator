@@ -60,8 +60,6 @@ func NewModelReconciler(client client.Client, scheme *runtime.Scheme) *ModelReco
 			DefaultTimeout: 20 * time.Second,
 			ControllerName: "model",
 		},
-		LitellmModelClient:  nil,
-		cachedConnectionRef: nil,
 	}
 }
 

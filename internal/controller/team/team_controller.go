@@ -52,8 +52,6 @@ func NewTeamReconciler(client client.Client, scheme *runtime.Scheme) *TeamReconc
 			Scheme:         scheme,
 			DefaultTimeout: 20 * time.Second,
 		},
-		LitellmClient:       nil,
-		cachedConnectionRef: nil,
 	}
 }
 
