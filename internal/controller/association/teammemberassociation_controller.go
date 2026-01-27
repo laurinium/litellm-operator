@@ -34,6 +34,7 @@ import (
 	authv1alpha1 "github.com/bbdsoftware/litellm-operator/api/auth/v1alpha1"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/base"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/common"
+	"github.com/bbdsoftware/litellm-operator/internal/interfaces"
 	"github.com/bbdsoftware/litellm-operator/internal/litellm"
 	"github.com/bbdsoftware/litellm-operator/internal/util"
 )
@@ -41,7 +42,8 @@ import (
 // TeamMemberAssociationReconciler reconciles a TeamMemberAssociation object
 type TeamMemberAssociationReconciler struct {
 	*base.BaseController[*authv1alpha1.TeamMemberAssociation]
-	LitellmClient litellm.LitellmTeamMemberAssociation
+	LitellmClient       litellm.LitellmTeamMemberAssociation
+	cachedConnectionRef interfaces.ConnectionRefInterface
 }
 
 // NewTeamMemberAssociationReconciler creates a new TeamMemberAssociationReconciler instance
@@ -52,7 +54,6 @@ func NewTeamMemberAssociationReconciler(client client.Client, scheme *runtime.Sc
 			Scheme:         scheme,
 			DefaultTimeout: 20 * time.Second,
 		},
-		LitellmClient: nil,
 	}
 }
 
@@ -173,13 +174,22 @@ func IsConditionTrue(conditions []metav1.Condition, conditionType string) bool {
 
 // ensureConnectionSetup configures the LiteLLM client
 func (r *TeamMemberAssociationReconciler) ensureConnectionSetup(ctx context.Context, teamMemberAssociation *authv1alpha1.TeamMemberAssociation) error {
-	if r.LitellmClient == nil {
-		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, teamMemberAssociation.Spec.ConnectionRef, teamMemberAssociation.Namespace)
-		if err != nil {
-			return err
-		}
-		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
+	client, needsNewClient, err := common.EnsureLitellmClient(
+		r.Client,
+		ctx,
+		r.cachedConnectionRef,
+		teamMemberAssociation.Spec.ConnectionRef,
+		teamMemberAssociation.Namespace,
+	)
+	if err != nil {
+		return err
 	}
+
+	if needsNewClient {
+		r.LitellmClient = client
+		r.cachedConnectionRef = teamMemberAssociation.Spec.ConnectionRef
+	}
+
 	return nil
 }
 

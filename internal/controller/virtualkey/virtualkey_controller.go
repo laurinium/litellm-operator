@@ -35,6 +35,7 @@ import (
 	authv1alpha1 "github.com/bbdsoftware/litellm-operator/api/auth/v1alpha1"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/base"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/common"
+	"github.com/bbdsoftware/litellm-operator/internal/interfaces"
 	"github.com/bbdsoftware/litellm-operator/internal/litellm"
 	"github.com/bbdsoftware/litellm-operator/internal/util"
 )
@@ -45,6 +46,7 @@ type VirtualKeyReconciler struct {
 	LitellmClient         litellm.LitellmVirtualKey
 	litellmResourceNaming *util.LitellmResourceNaming
 	OverrideLiteLLMURL    string
+	cachedConnectionRef   interfaces.ConnectionRefInterface
 }
 
 // NewVirtualKeyReconciler creates a new VirtualKeyReconciler instance
@@ -56,9 +58,6 @@ func NewVirtualKeyReconciler(client client.Client, scheme *runtime.Scheme) *Virt
 			DefaultTimeout: 20 * time.Second,
 			ControllerName: "virtualkey",
 		},
-		LitellmClient:         nil,
-		litellmResourceNaming: nil,
-		OverrideLiteLLMURL:    "",
 	}
 }
 
@@ -150,15 +149,23 @@ func (r *VirtualKeyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // ensureConnectionSetup configures the LiteLLM client and resource naming
 func (r *VirtualKeyReconciler) ensureConnectionSetup(ctx context.Context, virtualKey *authv1alpha1.VirtualKey) error {
-	if r.LitellmClient == nil {
-		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, virtualKey.Spec.ConnectionRef, virtualKey.Namespace)
-		if err != nil {
-			return err
-		}
-		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
+	client, needsNewClient, err := common.EnsureLitellmClient(
+		r.Client,
+		ctx,
+		r.cachedConnectionRef,
+		virtualKey.Spec.ConnectionRef,
+		virtualKey.Namespace,
+	)
+	if err != nil {
+		return err
 	}
 
-	if r.litellmResourceNaming == nil {
+	if needsNewClient {
+		r.LitellmClient = client
+		r.cachedConnectionRef = virtualKey.Spec.ConnectionRef
+	}
+
+	if r.litellmResourceNaming == nil || needsNewClient {
 		r.litellmResourceNaming = util.NewLitellmResourceNaming(&virtualKey.Spec.ConnectionRef)
 	}
 

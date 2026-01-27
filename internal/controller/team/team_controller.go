@@ -26,6 +26,7 @@ import (
 	authv1alpha1 "github.com/bbdsoftware/litellm-operator/api/auth/v1alpha1"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/base"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/common"
+	"github.com/bbdsoftware/litellm-operator/internal/interfaces"
 	litellm "github.com/bbdsoftware/litellm-operator/internal/litellm"
 	"github.com/bbdsoftware/litellm-operator/internal/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,7 +40,8 @@ import (
 // TeamReconciler reconciles a Team object
 type TeamReconciler struct {
 	*base.BaseController[*authv1alpha1.Team]
-	LitellmClient litellm.LitellmTeam
+	LitellmClient       litellm.LitellmTeam
+	cachedConnectionRef interfaces.ConnectionRefInterface
 }
 
 // NewTeamReconciler creates a new TeamReconciler instance
@@ -50,7 +52,6 @@ func NewTeamReconciler(client client.Client, scheme *runtime.Scheme) *TeamReconc
 			Scheme:         scheme,
 			DefaultTimeout: 20 * time.Second,
 		},
-		LitellmClient: nil,
 	}
 }
 
@@ -132,12 +133,20 @@ func (r *TeamReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 // ensureConnectionSetup configures the LiteLLM client
 func (r *TeamReconciler) ensureConnectionSetup(ctx context.Context, team *authv1alpha1.Team) error {
-	if r.LitellmClient == nil {
-		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, team.Spec.ConnectionRef, team.Namespace)
-		if err != nil {
-			return err
-		}
-		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
+	client, needsNewClient, err := common.EnsureLitellmClient(
+		r.Client,
+		ctx,
+		r.cachedConnectionRef,
+		team.Spec.ConnectionRef,
+		team.Namespace,
+	)
+	if err != nil {
+		return err
+	}
+
+	if needsNewClient {
+		r.LitellmClient = client
+		r.cachedConnectionRef = team.Spec.ConnectionRef
 	}
 
 	return nil

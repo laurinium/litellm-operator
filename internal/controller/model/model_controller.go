@@ -27,6 +27,7 @@ import (
 	litellmv1alpha1 "github.com/bbdsoftware/litellm-operator/api/litellm/v1alpha1"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/base"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/common"
+	"github.com/bbdsoftware/litellm-operator/internal/interfaces"
 	"github.com/bbdsoftware/litellm-operator/internal/litellm"
 	modelProvider "github.com/bbdsoftware/litellm-operator/internal/model"
 	"github.com/bbdsoftware/litellm-operator/internal/util"
@@ -41,7 +42,8 @@ import (
 // ModelReconciler reconciles a Model object
 type ModelReconciler struct {
 	*base.BaseController[*litellmv1alpha1.Model]
-	LitellmModelClient litellm.LitellmModel
+	LitellmModelClient  litellm.LitellmModel
+	cachedConnectionRef interfaces.ConnectionRefInterface
 }
 
 type ExternalData struct {
@@ -58,7 +60,6 @@ func NewModelReconciler(client client.Client, scheme *runtime.Scheme) *ModelReco
 			DefaultTimeout: 20 * time.Second,
 			ControllerName: "model",
 		},
-		LitellmModelClient: nil,
 	}
 }
 
@@ -139,12 +140,20 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 // ensureConnectionSetup configures the LiteLLM client
 func (r *ModelReconciler) ensureConnectionSetup(ctx context.Context, model *litellmv1alpha1.Model) error {
-	if r.LitellmModelClient == nil {
-		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, model.Spec.ConnectionRef, model.Namespace)
-		if err != nil {
-			return err
-		}
-		r.LitellmModelClient = litellmConnectionHandler.GetLitellmClient()
+	client, needsNewClient, err := common.EnsureLitellmClient(
+		r.Client,
+		ctx,
+		r.cachedConnectionRef,
+		model.Spec.ConnectionRef,
+		model.Namespace,
+	)
+	if err != nil {
+		return err
+	}
+
+	if needsNewClient {
+		r.LitellmModelClient = client
+		r.cachedConnectionRef = model.Spec.ConnectionRef
 	}
 
 	return nil

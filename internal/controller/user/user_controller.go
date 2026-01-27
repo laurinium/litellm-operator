@@ -26,6 +26,7 @@ import (
 	authv1alpha1 "github.com/bbdsoftware/litellm-operator/api/auth/v1alpha1"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/base"
 	"github.com/bbdsoftware/litellm-operator/internal/controller/common"
+	"github.com/bbdsoftware/litellm-operator/internal/interfaces"
 	litellm "github.com/bbdsoftware/litellm-operator/internal/litellm"
 	"github.com/bbdsoftware/litellm-operator/internal/util"
 	corev1 "k8s.io/api/core/v1"
@@ -43,6 +44,7 @@ type UserReconciler struct {
 	*base.BaseController[*authv1alpha1.User]
 	LitellmClient         litellm.LitellmUser
 	litellmResourceNaming *util.LitellmResourceNaming
+	cachedConnectionRef   interfaces.ConnectionRefInterface
 }
 
 // NewUserReconciler creates a new UserReconciler instance
@@ -54,8 +56,6 @@ func NewUserReconciler(client client.Client, scheme *runtime.Scheme) *UserReconc
 			DefaultTimeout: 20 * time.Second,
 			ControllerName: "user",
 		},
-		LitellmClient:         nil,
-		litellmResourceNaming: nil,
 	}
 }
 
@@ -139,15 +139,23 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 // ensureConnectionSetup configures the LiteLLM client and resource naming
 func (r *UserReconciler) ensureConnectionSetup(ctx context.Context, user *authv1alpha1.User) error {
-	if r.LitellmClient == nil {
-		litellmConnectionHandler, err := common.NewLitellmConnectionHandler(r.Client, ctx, user.Spec.ConnectionRef, user.Namespace)
-		if err != nil {
-			return err
-		}
-		r.LitellmClient = litellmConnectionHandler.GetLitellmClient()
+	client, needsNewClient, err := common.EnsureLitellmClient(
+		r.Client,
+		ctx,
+		r.cachedConnectionRef,
+		user.Spec.ConnectionRef,
+		user.Namespace,
+	)
+	if err != nil {
+		return err
 	}
 
-	if r.litellmResourceNaming == nil {
+	if needsNewClient {
+		r.LitellmClient = client
+		r.cachedConnectionRef = user.Spec.ConnectionRef
+	}
+
+	if r.litellmResourceNaming == nil || needsNewClient {
 		r.litellmResourceNaming = util.NewLitellmResourceNaming(&user.Spec.ConnectionRef)
 	}
 

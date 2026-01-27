@@ -224,3 +224,102 @@ func (h *LitellmConnectionHandler) getConnectionDetailsFromInstanceRef(ctx conte
 		URL:       strings.TrimSpace(url),
 	}, nil
 }
+
+// IsSameConnectionRef compares two ConnectionRefInterface objects to determine if they represent the same connection
+func IsSameConnectionRef(cached, current interfaces.ConnectionRefInterface) bool {
+	if cached == nil || current == nil {
+		return cached == current
+	}
+
+	if !isSameSecretRef(cached, current) {
+		return false
+	}
+
+	if !isSameInstanceRef(cached, current) {
+		return false
+	}
+
+	return true
+}
+
+// isSameSecretRef compares SecretRef fields of two ConnectionRefInterface objects
+func isSameSecretRef(cached, current interfaces.ConnectionRefInterface) bool {
+	if cached.HasSecretRef() != current.HasSecretRef() {
+		return false
+	}
+
+	if !cached.HasSecretRef() {
+		return true
+	}
+
+	cachedSR, cachedOK := cached.GetSecretRef().(interfaces.SecretRefInterface)
+	currentSR, currentOK := current.GetSecretRef().(interfaces.SecretRefInterface)
+
+	if !cachedOK || !currentOK {
+		return false
+	}
+
+	if cachedSR.GetSecretName() != currentSR.GetSecretName() ||
+		cachedSR.GetNamespace() != currentSR.GetNamespace() {
+		return false
+	}
+
+	return isSameKeys(cachedSR, currentSR)
+}
+
+// isSameKeys compares the keys of two SecretRefInterface objects
+func isSameKeys(cached, current interfaces.SecretRefInterface) bool {
+	if !cached.HasKeys() || !current.HasKeys() {
+		return true
+	}
+
+	cachedKeys := cached.GetKeys()
+	currentKeys := current.GetKeys()
+
+	return cachedKeys.GetMasterKey() == currentKeys.GetMasterKey() &&
+		cachedKeys.GetURL() == currentKeys.GetURL()
+}
+
+// isSameInstanceRef compares InstanceRef fields of two ConnectionRefInterface objects
+func isSameInstanceRef(cached, current interfaces.ConnectionRefInterface) bool {
+	if cached.HasInstanceRef() != current.HasInstanceRef() {
+		return false
+	}
+
+	if !cached.HasInstanceRef() {
+		return true
+	}
+
+	cachedIR, cachedOK := cached.GetInstanceRef().(interfaces.InstanceRefInterface)
+	currentIR, currentOK := current.GetInstanceRef().(interfaces.InstanceRefInterface)
+
+	if !cachedOK || !currentOK {
+		return false
+	}
+
+	return cachedIR.GetInstanceName() == currentIR.GetInstanceName() &&
+		cachedIR.GetNamespace() == currentIR.GetNamespace()
+}
+
+// EnsureLitellmClient creates or reuses a LiteLLM client based on whether the ConnectionRef has changed
+// Returns the client and a boolean indicating whether a new client was created
+func EnsureLitellmClient(
+	k8sClient client.Client,
+	ctx context.Context,
+	cachedConnectionRef interfaces.ConnectionRefInterface,
+	currentConnectionRef interfaces.ConnectionRefInterface,
+	namespace string,
+) (*litellm.LitellmClient, bool, error) {
+	// Check if we need to create or recreate the client due to a different ConnectionRef
+	needsNewClient := !IsSameConnectionRef(cachedConnectionRef, currentConnectionRef)
+
+	if needsNewClient {
+		litellmConnectionHandler, err := NewLitellmConnectionHandler(k8sClient, ctx, currentConnectionRef, namespace)
+		if err != nil {
+			return nil, false, err
+		}
+		return litellmConnectionHandler.GetLitellmClient(), true, nil
+	}
+
+	return nil, false, nil
+}
